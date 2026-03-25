@@ -423,7 +423,7 @@ generate_spd_conf() {
 
 Debug 0
 
-GenericExecuteSynth "printf '%s' \"\$DATA\" | ${LOCAL_BIN}/piper-spd \$VOICE ${fallback_voice} \$RATE"
+GenericExecuteSynth "printf '%s' '\$DATA' | ${LOCAL_BIN}/piper-spd \$VOICE ${fallback_voice} \$RATE"
 GenericCmdDependency "${LOCAL_BIN}/piper-spd"
 GenericMaxChunkLength 300
 
