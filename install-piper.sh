@@ -388,10 +388,13 @@ generate_addvoice_lines() {
         fi
     }
 
+    # speech-dispatcher normalises locale to lowercase with hyphens (en-gb not en_GB)
+    local spd_locale; spd_locale="$(echo "${locale//_/-}" | tr '[:upper:]' '[:lower:]')"
+
     local -a spd_types=(MALE1 MALE2 MALE3 FEMALE1 FEMALE2 FEMALE3 CHILD_MALE CHILD_FEMALE)
     for spd_type in "${spd_types[@]}"; do
         local chosen; chosen="$(pick_voice "$spd_type")"
-        printf 'AddVoice "%s" "%s" "%s"\n' "$locale" "$spd_type" "$chosen"
+        printf 'AddVoice "%s" "%s" "%s"\n' "$spd_locale" "$spd_type" "$chosen"
     done
 }
 
