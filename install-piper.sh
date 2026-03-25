@@ -101,14 +101,23 @@ fetch_voices_json() {
 
 # lookup_gender <voice-name>
 # Prints: male | female | neutral
-# Source 1: voices.json (preferred) — but NOTE: voices.json has NO gender field,
-#   so this path always falls through to the heuristic in practice.
-# Source 2: keyword in voice name dataset segment
+# Source 1: .gender sidecar file written by add-voice.sh
+# Source 2: voices.json (no gender field in practice, always falls through)
+# Source 3: keyword in voice name dataset segment
 lookup_gender() {
     local voice="$1"
     # Extract dataset segment: en_GB-northern_english_male-medium → northern_english_male
     local dataset
     dataset="$(echo "$voice" | sed 's/^[^-]*-//; s/-[^-]*$//')"
+
+    # Check sidecar file first
+    local sidecar="${VOICES_DIR}/${voice}.gender"
+    if [[ -f "$sidecar" ]]; then
+        local sc_gender; sc_gender="$(cat "$sidecar" | tr -d '[:space:]')"
+        case "$sc_gender" in
+            male|female|neutral) echo "$sc_gender"; return ;;
+        esac
+    fi
 
     local gender=""
     if [[ -f "$VOICES_JSON" ]]; then
