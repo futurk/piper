@@ -78,7 +78,7 @@ detect_audio_backend() {
         info "Audio backend: PipeWire"
     else
         AUDIO_BACKEND="alsa"
-        AUDIO_CMD='aplay -q -r "$RATE" -f S16_LE -t raw -'
+        AUDIO_CMD='aplay -q -r "$SAMPLE_RATE" -f S16_LE -t raw -'
         info "Audio backend: ALSA"
     fi
 }
@@ -224,7 +224,7 @@ write_wrapper() {
     cat > "$tmp" << 'WRAPPER_EOF'
 #!/usr/bin/env bash
 # piper-spd — called by speech-dispatcher sd_generic
-# Usage: piper-spd <voice-name> <fallback-voice-name>
+# Usage: piper-spd <voice-name> <fallback-voice-name> [spd-rate]
 # Text to speak arrives on stdin.
 set -euo pipefail
 
