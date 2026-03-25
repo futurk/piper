@@ -268,7 +268,7 @@ except Exception:
 LENGTH_SCALE=$(python3 -c "
 import sys
 try:
-    rate = max(-100, min(100, int(sys.argv[1])))
+    rate = max(-100, min(100, int(float(sys.argv[1]))))
     print(round(1.0 - rate / 200.0, 3))
 except (ValueError, IndexError):
     print(1.0)
