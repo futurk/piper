@@ -233,6 +233,7 @@ VOICES_DIR="__VOICES_DIR__"
 
 VOICE_NAME="${1:-}"
 FALLBACK_NAME="${2:-}"
+SPD_RATE="${3:-0}"
 
 resolve_model() {
     local name="$1"
@@ -255,7 +256,7 @@ fi
 MODEL="${VOICES_DIR}/${RESOLVED}.onnx"
 MODEL_JSON="${VOICES_DIR}/${RESOLVED}.onnx.json"
 
-RATE=$(python3 -c "
+SAMPLE_RATE=$(python3 -c "
 import json, sys
 try:
     with open(sys.argv[1]) as fh:
@@ -264,6 +265,15 @@ except Exception:
     print(22050)
 " "$MODEL_JSON" 2>/dev/null || echo 22050)
 
+LENGTH_SCALE=$(python3 -c "
+import sys
+try:
+    rate = max(-100, min(100, int(sys.argv[1])))
+    print(round(1.0 - rate / 200.0, 3))
+except (ValueError, IndexError):
+    print(1.0)
+" "$SPD_RATE" 2>/dev/null || echo 1.0)
+
 # Collapse stdin: newlines → spaces, trim
 TEXT=$(cat | tr '\n' ' ' | sed 's/  */ /g; s/^ *//; s/ *$//')
 [[ -z "$TEXT" ]] && exit 0
@@ -271,6 +281,10 @@ TEXT=$(cat | tr '\n' ' ' | sed 's/  */ /g; s/^ *//; s/ *$//')
 printf '%s\n' "$TEXT" | "$PIPER_BIN" \
     --model "$MODEL" \
     --output-raw \
+    --noise_scale 0.667 \
+    --noise_w 0.333 \
+    --sentence_silence 0 \
+    --length_scale "$LENGTH_SCALE" \
     --quiet \
     2>/dev/null | __AUDIO_CMD__ 2>/dev/null
 WRAPPER_EOF
