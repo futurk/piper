@@ -74,7 +74,7 @@ detect_audio_backend() {
     if pactl info 2>/dev/null | grep -q 'Server Name.*PipeWire' || \
        systemctl --user is-active --quiet pipewire 2>/dev/null; then
         AUDIO_BACKEND="pipewire"
-        AUDIO_CMD='paplay --raw --channels=1 --rate="$SAMPLE_RATE" --format=s16le --stream-name="piper-tts" -'
+        AUDIO_CMD='pacat --playback --channels=1 --rate="$SAMPLE_RATE" --format=s16le --stream-name="piper-tts"'
         info "Audio backend: PipeWire"
     else
         AUDIO_BACKEND="alsa"
