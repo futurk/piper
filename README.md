@@ -4,15 +4,16 @@ Piper TTS integrated with [speech-dispatcher](https://freebsoft.org/speechd)
 through the `sd_generic` module. Any application that speaks through
 speech-dispatcher — Orca, `spd-say`, browsers, editors — can use Piper voices.
 
-The scripts use the system `piper-tts` engine, download voices from the
-official Piper voice catalogue, and generate a per-user speech-dispatcher
-wrapper and module configuration.
+Everything is managed by one script, `piper-tts-spd.sh`, which uses your
+installed `piper-tts` engine, downloads voices from the official Piper voice
+catalogue, and generates the speech-dispatcher wrapper and module config.
 
 ## Features
 
+- One CLI for setup and voice management
 - Uses your installed `piper-tts` — no bundled Piper binary
-- Catalogue-driven voice downloads with size and MD5 verification
-- Per-user voice management: list, add, remove, update, validate
+- Catalogue-driven downloads with size and MD5 verification
+- List, add, remove, update, and validate voices
 - Interactive picker plus scriptable commands
 - speech-dispatcher slot mapping with rate control
 - PipeWire playback via PulseAudio compatibility, with ALSA fallback
@@ -34,9 +35,11 @@ sudo pacman -S speech-dispatcher curl python
 ```
 
 `speech-dispatcher` already depends on `libpulse`, which provides `pacat`.
-`alsa-utils` is only needed for the ALSA fallback.
+For PipeWire playback, the `pipewire-pulse` service must provide the
+PulseAudio compatibility server. `alsa-utils` is only needed for the ALSA
+fallback.
 
-The scripts require a command named `piper-tts`. The Arch AUR package
+The script requires a command named `piper-tts`. The Arch AUR package
 provides that name. On Fedora/Debian, install `piper-tts` through your
 preferred method and expose the resulting Piper command as `piper-tts` on
 `PATH`.
@@ -46,16 +49,16 @@ preferred method and expose the resulting Piper command as `piper-tts` on
 ```bash
 git clone <repository-url> piper-tts-spd
 cd piper-tts-spd
-./setup-piper.sh
+./piper-tts-spd.sh setup
 spd-say -o piper-generic "Hello from Piper."
 ```
 
-`setup-piper.sh` downloads the default voice, writes the wrapper and module
-config, registers the module, runs a smoke test, and reloads
-speech-dispatcher.
+`setup` downloads the default voice (or preserves your current valid default),
+writes the wrapper and module config, registers the module, runs a smoke test,
+and reloads speech-dispatcher.
 
-To make Piper the default speech-dispatcher engine, edit your
-`speechd.conf` and set:
+To make Piper the default speech-dispatcher engine, edit your `speechd.conf`
+and set:
 
 ```text
 DefaultModule piper-generic
@@ -67,78 +70,86 @@ Then reload speech-dispatcher:
 pkill -HUP speech-dispatcher
 ```
 
-## Scripts
-
-### `setup-piper.sh`
+## Command overview
 
 ```bash
-./setup-piper.sh
-```
-
-What it does:
-
-1. Detects the distribution and audio backend.
-2. Fetches the current voice catalogue.
-3. Downloads the default voice if it is not already installed.
-4. Writes `~/.local/bin/piper-spd`.
-5. Generates `${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher/modules/piper-generic.conf`.
-6. Copies the system `speechd.conf` to the user config directory if needed
-   and adds the `piper-generic` module.
-7. Ensures `~/.local/bin` is on `PATH` for common shells.
-8. Runs a smoke test and reloads speech-dispatcher.
-
-Re-running is safe: installed voices are skipped, the wrapper is rewritten,
-and the module config is replaced only when its content changes.
-
-Environment overrides:
-
-| Variable           | Default                                                | Description                         |
-|--------------------|--------------------------------------------------------|-------------------------------------|
-| `PIPER_VOICE`      | `en_GB-alan-medium`                                    | Voice installed by the base run     |
-| `PIPER_DATA_DIR`   | `${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts`       | Voice and catalogue data directory  |
-| `PIPER_VOICES_REV` | `main`                                                 | HuggingFace revision for voices     |
-
-```bash
-PIPER_VOICE=en_US-ryan-high ./setup-piper.sh
-```
-
-The base install voice does not get a `.gender` sidecar automatically. Its
-gender is inferred from the name. If the inference is wrong, correct it with
-`voices.sh gender` and regenerate:
-
-```bash
-./voices.sh gender en_GB-alan-medium male
-```
-
----
-
-### `voices.sh`
-
-Manage installed voices, the catalogue, and speech-dispatcher mappings.
-
-```bash
-./voices.sh list
-./voices.sh check
-./voices.sh available [locale] [quality]
-./voices.sh add [<voice> <gender>] [--force] [--default] [-i]
-./voices.sh remove [<voice>]
-./voices.sh default [<voice>]
-./voices.sh gender [<voice> [<gender>]]
-./voices.sh update [<voice>|--all] [--check]
+./piper-tts-spd.sh setup
+./piper-tts-spd.sh list
+./piper-tts-spd.sh check
+./piper-tts-spd.sh available [locale] [quality]
+./piper-tts-spd.sh add [<voice> <gender>] [--force] [--default] [-i]
+./piper-tts-spd.sh remove [<voice>]
+./piper-tts-spd.sh default [<voice>]
+./piper-tts-spd.sh gender [<voice> [<gender>]]
+./piper-tts-spd.sh update [<voice>|--all] [--check]
+./piper-tts-spd.sh help
 ```
 
 | Command | Description |
 |---------|-------------|
-| `list` | Show installed voices, gender, locale, quality, size, default marker, and slot mappings |
-| `check` | Validate model files, JSON configs, MD5s, gender sidecars, default voice, and slot mappings |
+| `setup` | Initial installation, wrapper generation, and module registration |
+| `list` | Show installed voices, metadata, size, default marker, and slot mappings |
+| `check` | Validate model files, JSON configs, MD5s, gender sidecars, default voice, and mappings |
 | `available` | List catalogue locales, or voices for a locale/quality |
 | `add` | Download, verify, and map a voice |
 | `remove` | Delete a voice and regenerate the module config |
 | `default` | Change the fallback voice without re-downloading |
 | `gender` | Correct a voice’s `.gender` sidecar and regenerate mappings |
 | `update` | Compare installed voices with the current catalogue and refresh them |
+| `help` | Show usage |
 
-#### Interactive mode
+## Setup
+
+```bash
+./piper-tts-spd.sh setup
+```
+
+What it does:
+
+1. Detects the distribution and audio backend.
+2. Fetches the current voice catalogue.
+3. Selects the setup voice:
+   - `PIPER_VOICE` if explicitly set
+   - otherwise the current valid default voice
+   - otherwise `en_GB-alan-medium`
+4. Downloads the setup voice if it is not already installed.
+5. Writes `~/.local/bin/piper-spd`.
+6. Generates `${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher/modules/piper-generic.conf`.
+7. Copies the system `speechd.conf` to the user config directory if needed
+   and adds the `piper-generic` module.
+8. Ensures `~/.local/bin` is on `PATH` for common shells.
+9. Runs a smoke test and reloads speech-dispatcher.
+
+Re-running `setup` is safe: installed voices are skipped, the wrapper is
+rewritten, and the module config is replaced only when its content changes.
+If a valid default voice already exists, `setup` preserves it unless
+`PIPER_VOICE` is set explicitly.
+
+Environment overrides:
+
+| Variable           | Default | Description |
+|--------------------|---------|-------------|
+| `PIPER_VOICE`      | current default, then `en_GB-alan-medium` | Voice used by `setup` |
+| `PIPER_DATA_DIR`   | `${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts` | Voice and catalogue data directory |
+| `PIPER_VOICES_REV` | `main` | HuggingFace revision for voices |
+| `PIPER_INTERACTIVE` | unset | Set to `1` to force menus without a TTY |
+| `PIPER_NO_INTERACTIVE` | unset | Set to `1` to never launch menus |
+
+```bash
+PIPER_VOICE=en_US-ryan-high ./piper-tts-spd.sh setup
+```
+
+The base setup voice does not get a `.gender` sidecar automatically. Its
+gender is inferred from the name. If the inference is wrong, correct it and
+regenerate the mappings:
+
+```bash
+./piper-tts-spd.sh gender en_GB-alan-medium male
+```
+
+## Voice management
+
+### Interactive mode
 
 On a TTY, `add`, `remove`, `default`, and `gender` launch a picker when their
 arguments are omitted:
@@ -153,23 +164,23 @@ Installed voices are marked in the catalogue list. Selecting an installed
 voice in `add` offers to refresh it. Multi-speaker voices show a warning that
 speaker 0 will be used.
 
-Control menus with environment variables:
-
 ```bash
-PIPER_NO_INTERACTIVE=1 ./voices.sh add   # require explicit arguments
-PIPER_INTERACTIVE=1 ./voices.sh add      # menus even without a TTY
+./piper-tts-spd.sh add          # interactive picker
+./piper-tts-spd.sh remove       # interactive picker
+./piper-tts-spd.sh default      # interactive picker
+./piper-tts-spd.sh gender       # interactive picker
 ```
 
-`add -i` enables interactive prompts for missing arguments even when stdin
-is not a TTY.
+`add -i` enables interactive prompts for missing arguments even when stdin is
+not a TTY. `PIPER_NO_INTERACTIVE=1` forces the argument-required behavior.
 
-#### Adding voices
+### Adding voices
 
 ```bash
-./voices.sh add                          # interactive
-./voices.sh add en_GB-cori-high female
-./voices.sh add --default en_US-ryan-high male
-./voices.sh add --force en_US-amy-medium female
+./piper-tts-spd.sh add                          # interactive
+./piper-tts-spd.sh add en_GB-cori-high female
+./piper-tts-spd.sh add --default en_US-ryan-high male
+./piper-tts-spd.sh add --force en_US-amy-medium female
 ```
 
 - `--force` re-downloads and verifies the voice atomically. Existing files
@@ -177,75 +188,68 @@ is not a TTY.
 - `--default` makes the new voice the fallback. Without it, the current
   default is kept; if no valid default exists, the new voice becomes it.
 
-#### Removing voices
+### Removing voices
 
 ```bash
-./voices.sh remove en_GB-cori-high
-./voices.sh remove                       # interactive
+./piper-tts-spd.sh remove en_GB-cori-high
+./piper-tts-spd.sh remove                       # interactive
 ```
 
 The current default voice and the only installed voice cannot be removed.
 
-#### Changing the default
+### Changing the default
 
 ```bash
-./voices.sh default en_GB-cori-high
+./piper-tts-spd.sh default en_GB-cori-high
 ```
 
 This regenerates the module config with the new fallback without downloading
 anything.
 
-#### Correcting gender
+### Correcting gender
 
 ```bash
-./voices.sh gender en_GB-alan-medium male
+./piper-tts-spd.sh gender en_GB-alan-medium male
 ```
 
 Piper’s catalogue does not include a gender field. The gender sidecar tells
 speech-dispatcher which slots (`MALE*` / `FEMALE*`) the voice should be
 mapped to.
 
-#### Browsing the catalogue
+### Browsing the catalogue
 
 ```bash
-./voices.sh available
-./voices.sh available en_US
-./voices.sh available en_US high
+./piper-tts-spd.sh available
+./piper-tts-spd.sh available en_US
+./piper-tts-spd.sh available en_US high
 ```
 
 `available` does not download anything. It marks voices that are already
 installed.
 
-#### Updating voices
+### Updating voices
 
 ```bash
-./voices.sh update --check
-./voices.sh update en_US-amy-medium
-./voices.sh update --all
+./piper-tts-spd.sh update --check
+./piper-tts-spd.sh update en_US-amy-medium
+./piper-tts-spd.sh update --all
 ```
 
 `update` fetches the current catalogue and compares MD5s. `--check` only
 reports and exits nonzero when updates are available. `--all` is the default
 when no voice is specified.
 
-#### Exit codes
+### Exit codes
 
 - `check` exits nonzero if any validation fails.
 - `update --check` exits nonzero if any updates are available.
 - Other commands exit nonzero on errors.
 
-#### Environment
+## Generated wrapper
 
-`voices.sh` honors `PIPER_DATA_DIR`, `PIPER_VOICES_REV`, `PIPER_INTERACTIVE`,
-and `PIPER_NO_INTERACTIVE`.
-
----
-
-### `piper-spd` (generated wrapper)
-
-`setup-piper.sh` writes `~/.local/bin/piper-spd`. speech-dispatcher calls it
-once per synthesis request. It is not intended for normal manual use, but it
-can be invoked directly:
+`setup` writes `~/.local/bin/piper-spd`. speech-dispatcher calls it once per
+synthesis request. It is not intended for normal manual use, but it can be
+invoked directly:
 
 ```bash
 echo "Hello world." | ~/.local/bin/piper-spd <voice-name> <fallback-voice-name> [spd-rate]
@@ -286,10 +290,10 @@ FEMALE1 FEMALE2 FEMALE3
 CHILD_MALE CHILD_FEMALE
 ```
 
-Piper has no gender metadata, so `voices.sh` stores gender in
-`<voice>.gender` and distributes installed voices across the available slots
-for each locale. Re-running `add`, `remove`, `default`, or `gender`
-regenerates the mappings from the installed voices.
+Piper has no gender metadata, so the script stores gender in `<voice>.gender`
+and distributes installed voices across the available slots for each locale.
+Re-running `add`, `remove`, `default`, or `gender` regenerates the mappings
+from the installed voices.
 
 speech-dispatcher provides three numbered slots per gender (`MALE1`–`MALE3`,
 `FEMALE1`–`FEMALE3`) plus the child slots. The generated config maps up to
@@ -341,7 +345,7 @@ Quality levels:
 Browse samples at <https://rhasspy.github.io/piper-samples/>.
 
 AUR voice packages are not used. They are often behind the current catalogue,
-and the scripts download directly from HuggingFace under the user’s data
+and the script downloads directly from HuggingFace under the user’s data
 directory.
 
 ## Dependencies
@@ -379,8 +383,8 @@ ${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher/
         piper-generic.conf.bak  # Previous config, when regenerated
 ```
 
-`piper-tts` itself is installed system-wide and is not managed by these
-scripts.
+`piper-tts` itself is installed system-wide and is not managed by this
+script.
 
 ## Assumptions and limitations
 
@@ -390,9 +394,8 @@ scripts.
   `~/.config` (or the XDG equivalents). No root access is required.
 - **speech-dispatcher config** — only the per-user configuration is modified.
   A system-wide speech-dispatcher installation is assumed.
-- **Default module** — `setup-piper.sh` registers the module but deliberately
-  does not set `DefaultModule`. Set it manually if you want Piper as the
-  system default.
+- **Default module** — `setup` registers the module but deliberately does not
+  set `DefaultModule`. Set it manually if you want Piper as the system default.
 - **Multi-speaker voices** — `available` and the interactive picker show the
   speaker count, but the wrapper always uses speaker 0. Per-speaker selection
   is not implemented yet.
@@ -402,24 +405,24 @@ scripts.
 ## Repository layout
 
 ```text
-setup-piper.sh          Initial setup and wrapper/config generation
-voices.sh               Voice management CLI and interactive picker
-lib/piper-common.sh     Shared catalogue, download, and config helpers
+piper-tts-spd.sh        Setup and voice management CLI
 docs/                   Historical design and implementation notes
 LICENSE                 GPL-3.0-or-later
 ```
 
 ## Migrating from older versions
 
-Older versions used `install-piper.sh` and `add-voice.sh`, and downloaded a
-bundled Piper binary.
+Older versions used separate `setup-piper.sh`, `voices.sh`, and
+`install-piper.sh` scripts, plus `lib/piper-common.sh`.
 
-- `install-piper.sh` → `setup-piper.sh`
-- `add-voice.sh <voice> <gender>` → `voices.sh add <voice> <gender>`
-- The bundled Piper download and `~/.local/bin/piper` symlink were removed;
-  `piper-tts` must now be installed separately.
+- `install-piper.sh` → `piper-tts-spd.sh setup`
+- `setup-piper.sh` → `piper-tts-spd.sh setup`
+- `voices.sh <command>` → `piper-tts-spd.sh <command>`
+- `add-voice.sh <voice> <gender>` → `piper-tts-spd.sh add <voice> <gender>`
+- The old bundled Piper download and `~/.local/bin/piper` symlink were
+  removed; `piper-tts` must be installed separately.
 - Existing voices under `~/.local/share/piper-tts/voices` remain compatible.
-- Run `./voices.sh list` and `./voices.sh check` after upgrading.
+- Run `./piper-tts-spd.sh list` and `./piper-tts-spd.sh check` after upgrading.
 
 ## Troubleshooting
 
@@ -454,15 +457,15 @@ Use `-o piper-generic`, or set `DefaultModule piper-generic` in
 **Wrong gender mapping**
 
 ```bash
-./voices.sh gender <voice> <male|female|neutral>
+./piper-tts-spd.sh gender <voice> <male|female|neutral>
 ```
 
 **Voice failed validation or is out of date**
 
 ```bash
-./voices.sh check
-./voices.sh update --check
-./voices.sh update --all
+./piper-tts-spd.sh check
+./piper-tts-spd.sh update --check
+./piper-tts-spd.sh update --all
 ```
 
 ## License

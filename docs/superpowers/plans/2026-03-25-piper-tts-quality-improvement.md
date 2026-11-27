@@ -1,7 +1,9 @@
 # Piper TTS Quality Improvement — Implementation Plan
 
-> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`,
-> and `add-voice.sh` was replaced by the `voices.sh` CLI.
+> **Historical note:** these scripts were later consolidated into the single
+> `piper-tts-spd.sh` CLI. `install-piper.sh`/`setup-piper.sh` became
+> `piper-tts-spd.sh setup`, and `add-voice.sh`/`voices.sh` became the voice
+> subcommands.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

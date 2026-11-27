@@ -1,7 +1,9 @@
 # Piper TTS Quality Improvement — Design Spec
 
-> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`,
-> and `add-voice.sh` was replaced by the `voices.sh` CLI.
+> **Historical note:** these scripts were later consolidated into the single
+> `piper-tts-spd.sh` CLI. `install-piper.sh`/`setup-piper.sh` became
+> `piper-tts-spd.sh setup`, and `add-voice.sh`/`voices.sh` became the voice
+> subcommands.
 
 **Date:** 2026-03-25
 **Status:** Approved
