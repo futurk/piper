@@ -1,18 +1,38 @@
 # piper-tts-spd
 
-Piper TTS integrated with [speech-dispatcher](https://freebsoft.org/speechd)
-through the `sd_generic` module. Any application that speaks through
-speech-dispatcher — Orca, `spd-say`, browsers, editors — can use Piper voices.
+Configuration and voice-management CLI for
+[Piper TTS](https://github.com/OHF-Voice/piper1-gpl) and
+[speech-dispatcher](https://freebsoft.org/speechd).
 
-Everything is managed by one script, `piper-tts-spd.sh`, which uses your
-installed `piper-tts` engine, downloads voices from the official Piper voice
-catalogue, and generates the speech-dispatcher wrapper and module config.
+It turns a system `piper-tts` installation into a speech-dispatcher output
+module and manages the Piper voice models used by that module. It does not
+replace `piper-tts`; the engine’s own CLI and API remain available.
+
+## Where this fits
+
+Roughly:
+
+```text
+yay -S piper-tts                 # install the engine
+./piper-tts-spd.sh setup         # integrate with speech-dispatcher + voices
+./piper-tts-spd.sh add ...       # optional: add more voices
+spd-say -o piper-generic "..."   # use via speech-dispatcher
+piper-tts -h                     # or use the engine directly
+```
+
+`piper-tts -h`, `piper-tts --model ...`, and the engine’s own Python APIs work
+immediately after installing `piper-tts`; this project is optional for direct
+engine use. `piper-tts-spd.sh` is the layer between a bare engine install and
+applications that speak through speech-dispatcher.
+
+The generated `~/.local/bin/piper-spd` is the runtime adapter called by
+speech-dispatcher. It is separate from the `piper-tts` command.
 
 ## Features
 
 - One CLI for setup and voice management
-- Uses your installed `piper-tts` — no bundled Piper binary
-- Catalogue-driven downloads with size and MD5 verification
+- Uses the installed `piper-tts` engine — no bundled binary
+- Catalogue-driven voice downloads with size and MD5 verification
 - List, add, remove, update, and validate voices
 - Interactive picker plus scriptable commands
 - speech-dispatcher slot mapping with rate control
@@ -27,22 +47,20 @@ catalogue, and generates the speech-dispatcher wrapper and module config.
 - `curl`, `python3`, and `md5sum` (coreutils)
 - A working audio backend: PipeWire (`pacat`) or ALSA (`aplay`)
 
-On Arch Linux, install `piper-tts` from the AUR:
+On Arch Linux:
 
 ```bash
 yay -S piper-tts
 sudo pacman -S speech-dispatcher curl python
 ```
 
-`speech-dispatcher` already depends on `libpulse`, which provides `pacat`.
-For PipeWire playback, the `pipewire-pulse` service must provide the
-PulseAudio compatibility server. `alsa-utils` is only needed for the ALSA
-fallback.
+`speech-dispatcher` depends on `libpulse`, which provides `pacat`. For
+PipeWire playback, `pipewire-pulse` must provide the PulseAudio compatibility
+server. `alsa-utils` is only needed for the ALSA fallback.
 
-The script requires a command named `piper-tts`. The Arch AUR package
-provides that name. On Fedora/Debian, install `piper-tts` through your
-preferred method and expose the resulting Piper command as `piper-tts` on
-`PATH`.
+The script requires a command named `piper-tts`. The Arch AUR package provides
+that name. On Fedora/Debian, install `piper-tts` through your preferred method
+and expose the resulting Piper command as `piper-tts` on `PATH`.
 
 ## Quick start
 
@@ -53,9 +71,9 @@ cd piper-tts-spd
 spd-say -o piper-generic "Hello from Piper."
 ```
 
-`setup` downloads the default voice (or preserves your current valid default),
-writes the wrapper and module config, registers the module, runs a smoke test,
-and reloads speech-dispatcher.
+`setup` downloads or preserves the default voice, writes the wrapper and
+module config, registers the module, runs a smoke test, and reloads
+speech-dispatcher.
 
 To make Piper the default speech-dispatcher engine, edit your `speechd.conf`
 and set:
@@ -98,6 +116,9 @@ pkill -HUP speech-dispatcher
 | `update` | Compare installed voices with the current catalogue and refresh them |
 | `help` | Show usage |
 
+Aliases: `install` = `setup`, `rm` = `remove`, `avail` = `available`,
+`upgrade` = `update`.
+
 ## Setup
 
 ```bash
@@ -127,10 +148,10 @@ If a valid default voice already exists, `setup` preserves it unless
 
 Environment overrides:
 
-| Variable           | Default | Description |
-|--------------------|---------|-------------|
-| `PIPER_VOICE`      | current default, then `en_GB-alan-medium` | Voice used by `setup` |
-| `PIPER_DATA_DIR`   | `${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts` | Voice and catalogue data directory |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIPER_VOICE` | current default, then `en_GB-alan-medium` | Voice used by `setup` |
+| `PIPER_DATA_DIR` | `${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts` | Voice and catalogue data directory |
 | `PIPER_VOICES_REV` | `main` | HuggingFace revision for voices |
 | `PIPER_INTERACTIVE` | unset | Set to `1` to force menus without a TTY |
 | `PIPER_NO_INTERACTIVE` | unset | Set to `1` to never launch menus |
@@ -280,6 +301,19 @@ Playback backend selection:
 - PipeWire (via PulseAudio compatibility): `pacat`
 - ALSA-only: `aplay`
 
+## Using Piper directly
+
+`piper-tts-spd.sh` does not wrap the engine’s command line. For one-off
+synthesis, use `piper-tts` directly:
+
+```bash
+piper-tts -h
+piper-tts -m ~/.local/share/piper-tts/voices/en_US-ryan-high.onnx \
+          -f hello.wav -- "Hello from Piper."
+```
+
+The script only manages the voice files and the speech-dispatcher integration.
+
 ## Gender and speech-dispatcher slots
 
 speech-dispatcher selects voices by locale and type:
@@ -336,11 +370,11 @@ HuggingFace. `voices.json` is cached locally and used for:
 
 Quality levels:
 
-| Quality  | Approximate size | Notes |
-|----------|------------------|-------|
-| `low`    | 27–67 MB | Fastest, lower clarity |
+| Quality | Approximate size | Notes |
+|---------|------------------|-------|
+| `low` | 27–67 MB | Fastest, lower clarity |
 | `medium` | 60–75 MB | Good balance |
-| `high`   | 60–130 MB | Best clarity, recommended for high rates |
+| `high` | 60–130 MB | Best clarity, recommended for high rates |
 
 Browse samples at <https://rhasspy.github.io/piper-samples/>.
 
@@ -360,8 +394,8 @@ directory.
 | `pacat` | PipeWire playback (PulseAudio compatibility) | `libpulse` |
 | `aplay` | ALSA fallback playback | `alsa-utils` |
 
-For PipeWire playback, the `pipewire-pulse` service must provide the
-PulseAudio compatibility server used by `pacat`.
+For PipeWire playback, `pipewire-pulse` must provide the PulseAudio
+compatibility server used by `pacat`.
 
 ## Files installed
 
