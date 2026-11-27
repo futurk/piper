@@ -1,6 +1,7 @@
 # Piper TTS Quality Improvement — Implementation Plan
 
-> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`.
+> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`,
+> and `add-voice.sh` was replaced by the `voices.sh` CLI.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -39,38 +39,53 @@ wrapper and conf are regenerated from scratch.
 PIPER_VOICE=en_US-ryan-high ./setup-piper.sh
 ```
 
+`voices.sh` honors the same `PIPER_DATA_DIR` and `PIPER_VOICES_REV` overrides.
+
 ---
 
-### `add-voice.sh`
+### `voices.sh`
 
-Downloads an additional Piper voice, maps it to speech-dispatcher's voice
-slots, and updates the fallback voice in `GenericExecuteSynth`.
+Manages installed voices and their speech-dispatcher mappings.
 
 ```bash
-./add-voice.sh [--force] <voice-name> <gender>
+./voices.sh list
+./voices.sh check
+./voices.sh add <voice> <gender> [--force] [--default]
+./voices.sh remove <voice>
+./voices.sh default <voice>
+./voices.sh gender <voice> <gender>
+./voices.sh update [<voice>|--all] [--check]
 ```
 
-- `<voice-name>` — Piper voice identifier, e.g. `en_US-lessac-high`
-- `<gender>` — `male`, `female`, or `neutral`
-- `--force` — re-download an already-installed voice (atomically; existing
-  `AddVoice` entries and the fallback voice are left alone)
+- `list` — show installed voices, metadata, size, default marker, and slot mappings
+- `check` — validate files, JSON, MD5s, gender sidecars, and conf mappings
+- `add` — download and map a voice; `--force` refreshes it, `--default` makes it the fallback
+- `remove` — delete a voice and regenerate the module config; refuses to remove
+  the current default or the only installed voice
+- `default` — change the fallback voice without re-downloading
+- `gender` — correct a voice’s `.gender` sidecar after a bad inference
+- `update` — compare installed voices with the current HuggingFace catalogue;
+  `--check` reports without downloading (exits nonzero if updates are
+  available), `--all` refreshes every voice
 
 Gender determines which speech-dispatcher slot type (`MALE*` / `FEMALE*`)
-the voice is mapped to. This must be provided explicitly because the Piper
+the voice is mapped to. It must be provided explicitly because the Piper
 voice catalogue does not include a gender field.
 
 speech-dispatcher provides three slots per gender (`MALE1`–`MALE3`,
-`FEMALE1`–`FEMALE3`). If all three are already mapped, the new voice replaces
-the slot whose current voice is most duplicated, so adding up to three voices
-per gender keeps them all selectable.
+`FEMALE1`–`FEMALE3`). The generated config distributes installed voices
+across those slots. Re-running `add`, `remove`, `default`, or `gender`
+regenerates the config from the installed voices.
 
 **Examples**
 
 ```bash
-./add-voice.sh en_GB-cori-high female
-./add-voice.sh en_US-ryan-high male
-./add-voice.sh en_US-lessac-high female
-./add-voice.sh --force en_GB-alan-medium male
+./voices.sh add en_GB-cori-high female
+./voices.sh add en_US-ryan-high male
+./voices.sh add --default en_US-lessac-high female
+./voices.sh default en_GB-cori-high
+./voices.sh gender en_GB-alan-medium male
+./voices.sh update --check
 ```
 
 Requires `setup-piper.sh` to have been run first.
@@ -103,9 +118,9 @@ Piper voices follow the pattern `<locale>-<name>-<quality>`:
 
 | Quality  | File size | Notes                                  |
 |----------|-----------|----------------------------------------|
-| `low`    | ~5 MB     | Fast, lower clarity                    |
-| `medium` | ~60 MB    | Good balance                           |
-| `high`   | ~115 MB   | Best clarity, recommended at high rate |
+| `low`    | 27–67 MB  | Fast, lower clarity                    |
+| `medium` | 60–75 MB  | Good balance                           |
+| `high`   | 60–130 MB | Best clarity, recommended at high rate |
 
 Browse available voices at <https://rhasspy.github.io/piper-samples/>.
 
@@ -177,7 +192,7 @@ ${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts/
     voices/
         <voice>.onnx               # ONNX model
         <voice>.onnx.json          # Model metadata (sample rate, etc.)
-        <voice>.gender             # Gender sidecar (written by add-voice.sh)
+        <voice>.gender             # Gender sidecar (managed by voices.sh)
     voices.json                    # Piper voice catalogue (cached)
 
 ~/.local/bin/

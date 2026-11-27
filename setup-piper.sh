@@ -13,19 +13,13 @@
 
 set -euo pipefail
 
-PIPER_VOICE="${PIPER_VOICE:-en_GB-alan-medium}"
-PIPER_DIR="${PIPER_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/piper-tts}"
-VOICES_DIR="$PIPER_DIR/voices"
-VOICES_JSON="$PIPER_DIR/voices.json"
-LOCAL_BIN="$HOME/.local/bin"
-SPD_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher"
-SPD_MODULES_DIR="$SPD_CONFIG_DIR/modules"
-SPD_CONF="$SPD_CONFIG_DIR/speechd.conf"
-SPD_MODULE_CONF="$SPD_MODULES_DIR/piper-generic.conf"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${SCRIPT_PATH}")" && pwd)"
+# shellcheck source=lib/piper-common.sh
+source "${SCRIPT_DIR}/lib/piper-common.sh"
+piper_init_paths
 
-PIPER_VOICES_REV="${PIPER_VOICES_REV:-main}"
-VOICES_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICES_REV}"
-VOICES_JSON_URL="${VOICES_BASE_URL}/voices.json"
+PIPER_VOICE="${PIPER_VOICE:-en_GB-alan-medium}"
 
 # Set by detect_distro
 PKG_HINT=""
@@ -36,15 +30,6 @@ AUDIO_BACKEND=""
 AUDIO_CMD=""
 # Set by detect_piper
 PIPER_BIN=""
-
-# ---------------------------------------------------------------------------
-# Logging helpers
-# ---------------------------------------------------------------------------
-
-info() { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
-ok()   { echo -e "\033[1;32m[OK]\033[0m    $*"; }
-warn() { echo -e "\033[1;33m[WARN]\033[0m  $*" >&2; }
-die()  { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Distribution detection and prerequisite check
@@ -81,6 +66,7 @@ detect_distro() {
 check_prereqs() {
     command -v curl    &>/dev/null || die "curl is required: ${PKG_HINT} curl"
     command -v python3 &>/dev/null || die "python3 is required: ${PKG_HINT} ${PYTHON_PKG}"
+    command -v md5sum  &>/dev/null || die "md5sum is required (coreutils)."
     command -v piper-tts &>/dev/null || die "piper-tts is required. ${PIPER_HINT}"
 }
 
@@ -116,121 +102,6 @@ detect_audio_backend() {
         AUDIO_CMD='aplay -q -r "$SAMPLE_RATE" -f S16_LE -t raw -'
         info "Audio backend: ALSA"
     fi
-}
-
-# ── Voices JSON ────────────────────────────────────────────────────────────────
-
-fetch_voices_json() {
-    mkdir -p "$PIPER_DIR"
-    info "Fetching voices.json from HuggingFace..."
-    if curl -sL --fail -o "$VOICES_JSON.tmp" "$VOICES_JSON_URL" 2>/dev/null; then
-        mv "$VOICES_JSON.tmp" "$VOICES_JSON"
-        ok "voices.json cached at ${VOICES_JSON}"
-    else
-        rm -f "$VOICES_JSON.tmp"
-        warn "Failed to fetch voices.json — gender will be inferred from voice name."
-    fi
-}
-
-# ── Gender Lookup ──────────────────────────────────────────────────────────────
-
-# lookup_gender <voice-name>
-# Prints: male | female | neutral
-# Source 1: .gender sidecar file written by add-voice.sh
-# Source 2: voices.json (no gender field in practice, always falls through)
-# Source 3: keyword in voice name dataset segment
-lookup_gender() {
-    local voice="$1"
-    # Extract dataset segment: en_GB-northern_english_male-medium → northern_english_male
-    local dataset
-    dataset="$(echo "$voice" | sed 's/^[^-]*-//; s/-[^-]*$//')"
-
-    # Check sidecar file first
-    local sidecar="${VOICES_DIR}/${voice}.gender"
-    if [[ -f "$sidecar" ]]; then
-        local sc_gender; sc_gender="$(cat "$sidecar" | tr -d '[:space:]')"
-        case "$sc_gender" in
-            male|female|neutral) echo "$sc_gender"; return ;;
-        esac
-    fi
-
-    local gender=""
-    if [[ -f "$VOICES_JSON" ]]; then
-        gender="$(python3 - "$voice" "$VOICES_JSON" << 'PYEOF'
-import json, sys
-voice, path = sys.argv[1], sys.argv[2]
-try:
-    with open(path) as fh:
-        d = json.load(fh)
-    print(d.get(voice, {}).get('gender', ''))
-except Exception:
-    print('')
-PYEOF
-        )"
-    fi
-
-    # Heuristic fallback
-    if [[ -z "$gender" ]]; then
-        case "${dataset,,}" in
-            *female*) gender="female" ;;
-            *male*)   gender="male"   ;;
-            *)        gender="neutral" ;;
-        esac
-        if [[ -f "$VOICES_JSON" ]]; then
-            warn "Gender for '${voice}' not in voices.json — inferred '${gender}' from name."
-        else
-            warn "voices.json not cached — inferred gender '${gender}' from voice name."
-        fi
-    fi
-
-    echo "$gender"
-}
-
-# ── Voice Path and Download ────────────────────────────────────────────────────
-
-# voice_hf_path <voice-name>  →  prints HuggingFace subdirectory path
-# e.g. en_GB-alan-medium → en/en_GB/alan/medium
-voice_hf_path() {
-    local voice="$1"
-    local locale="${voice%%-*}"               # en_GB
-    local rest="${voice#*-}"                   # alan-medium
-    local name="${rest%%-*}"                   # alan
-    local quality="${rest##*-}"               # medium
-    local family="${locale%%_*}"              # en
-    echo "${family}/${locale}/${name}/${quality}"
-}
-
-download_voice() {
-    local voice="$1"
-    local onnx="${VOICES_DIR}/${voice}.onnx"
-    local json="${VOICES_DIR}/${voice}.onnx.json"
-
-    if [[ -f "$onnx" && -f "$json" ]]; then
-        ok "Voice '${voice}' already present — skipping download."
-        return
-    fi
-
-    mkdir -p "$VOICES_DIR"
-    local hf_path
-    hf_path="$(voice_hf_path "$voice")"
-    local base_url="${VOICES_BASE_URL}/${hf_path}"
-
-    local tmp_onnx="${onnx}.tmp"
-    local tmp_json="${json}.tmp"
-
-    info "Downloading voice model '${voice}'..."
-    curl -L --fail --progress-bar -o "$tmp_onnx" "${base_url}/${voice}.onnx" \
-        || { rm -f "$tmp_onnx"; die "Failed to download ${voice}.onnx"; }
-    curl -L --fail --progress-bar -o "$tmp_json" "${base_url}/${voice}.onnx.json" \
-        || { rm -f "$tmp_onnx" "$tmp_json"; die "Failed to download ${voice}.onnx.json"; }
-
-    python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$tmp_json" 2>/dev/null \
-        || { rm -f "$tmp_onnx" "$tmp_json"; die "Downloaded ${voice}.onnx.json is not valid JSON."; }
-
-    mv "$tmp_onnx" "$onnx"
-    mv "$tmp_json" "$json"
-
-    ok "Voice '${voice}' saved to ${VOICES_DIR}/"
 }
 
 # ── piper-spd wrapper ──────────────────────────────────────────────────────────
@@ -322,151 +193,6 @@ WRAPPER_EOF
     ok "Wrapper written at ${wrapper}"
 }
 
-# ── piper-generic.conf generation ─────────────────────────────────────────────
-
-# generate_addvoice_lines <locale> <fallback_voice>
-# Prints 8 AddVoice lines for the given locale.
-generate_addvoice_lines() {
-    local locale="$1"
-    local fallback_voice="$2"
-
-    # Collect all voices for this exact locale, sorted alphabetically
-    local -a all_voices=()
-    for onnx in "${VOICES_DIR}"/*.onnx; do
-        [[ -f "$onnx" ]] || continue
-        local base; base="$(basename "$onnx" .onnx)"
-        local voice_locale="${base%%-*}"
-        [[ "$voice_locale" == "$locale" ]] && all_voices+=("$base")
-    done
-    # Sort alphabetically
-    if [[ ${#all_voices[@]} -gt 0 ]]; then
-        IFS=$'\n' all_voices=($(printf '%s\n' "${all_voices[@]}" | LC_ALL=C sort))
-        unset IFS
-    fi
-
-    [[ ${#all_voices[@]} -eq 0 ]] && return
-
-    # Get genders
-    declare -A vg=()
-    for v in "${all_voices[@]}"; do
-        vg["$v"]="$(lookup_gender "$v")"
-    done
-
-    # Build gender pools (already sorted)
-    local -a males=() females=() neutrals=()
-    for v in "${all_voices[@]}"; do
-        case "${vg[$v]}" in
-            male)    males+=("$v") ;;
-            female)  females+=("$v") ;;
-            *)       neutrals+=("$v") ;;
-        esac
-    done
-
-    # pick_voice <spd_type> — prints the voice name for this type
-    pick_voice() {
-        local spd_type="$1"
-        local idx=0
-        case "$spd_type" in
-            *2) idx=1 ;;
-            *3) idx=2 ;;
-        esac
-
-        local -a primary=() secondary=() overflow=()
-        case "$spd_type" in
-            MALE*|CHILD_MALE)
-                primary=("${males[@]+"${males[@]}"}")
-                secondary=("${neutrals[@]+"${neutrals[@]}"}")
-                overflow=("${females[@]+"${females[@]}"}")
-                ;;
-            FEMALE*|CHILD_FEMALE)
-                primary=("${females[@]+"${females[@]}"}")
-                secondary=("${neutrals[@]+"${neutrals[@]}"}")
-                overflow=("${males[@]+"${males[@]}"}")
-                ;;
-        esac
-
-        local prim_count=${#primary[@]}
-        local sec_count=${#secondary[@]}
-        local over_count=${#overflow[@]}
-
-        if [[ $prim_count -gt 0 ]]; then
-            echo "${primary[$((idx % prim_count))]}"
-        elif [[ $sec_count -gt 0 ]]; then
-            echo "${secondary[$((idx % sec_count))]}"
-        elif [[ $over_count -gt 0 ]]; then
-            echo "${overflow[$((idx % over_count))]}"
-        else
-            echo "$fallback_voice"
-        fi
-    }
-
-    # speech-dispatcher normalises locale to lowercase with hyphens (en-gb not en_GB)
-    local spd_locale; spd_locale="$(echo "${locale//_/-}" | tr '[:upper:]' '[:lower:]')"
-
-    local -a spd_types=(MALE1 MALE2 MALE3 FEMALE1 FEMALE2 FEMALE3 CHILD_MALE CHILD_FEMALE)
-    for spd_type in "${spd_types[@]}"; do
-        local chosen; chosen="$(pick_voice "$spd_type")"
-        printf 'AddVoice "%s" "%s" "%s"\n' "$spd_locale" "$spd_type" "$chosen"
-    done
-}
-
-# generate_spd_conf <fallback_voice>
-generate_spd_conf() {
-    local fallback_voice="$1"
-    local today; today="$(date +%Y-%m-%d)"
-
-    mkdir -p "$SPD_MODULES_DIR"
-
-    # Backup existing conf
-    if [[ -f "$SPD_MODULE_CONF" ]]; then
-        cp "$SPD_MODULE_CONF" "${SPD_MODULE_CONF}.bak"
-        warn "Existing piper-generic.conf backed up to ${SPD_MODULE_CONF}.bak"
-    fi
-
-    info "Generating ${SPD_MODULE_CONF}..."
-
-    # Collect all distinct locales from installed voices
-    declare -A seen_locales=()
-    for onnx in "${VOICES_DIR}"/*.onnx; do
-        [[ -f "$onnx" ]] || continue
-        local base; base="$(basename "$onnx" .onnx)"
-        local locale="${base%%-*}"
-        seen_locales["$locale"]=1
-    done
-
-    # Write the conf header
-    cat > "$SPD_MODULE_CONF" << CONF_EOF
-# Piper TTS — speech-dispatcher module config
-# Generated by setup-piper.sh on ${today}
-#
-# FALLBACK_VOICE: ${fallback_voice}
-# To change the fallback voice:
-#   1. Edit the FALLBACK_VOICE line above.
-#   2. Run: ./add-voice.sh <any-voice>   (or edit GenericExecuteSynth below directly)
-#      add-voice.sh will sync GenericExecuteSynth to match FALLBACK_VOICE.
-
-Debug 0
-
-GenericExecuteSynth "printf '%s' '\$DATA' | ${LOCAL_BIN}/piper-spd \$VOICE ${fallback_voice} \$RATE"
-GenericCmdDependency "${LOCAL_BIN}/piper-spd"
-GenericMaxChunkLength 300
-
-# ── Voices ────────────────────────────────────────────────────────────────────
-# Format: AddVoice "<locale>" "<SPD_TYPE>" "<voice-name>"
-# Edit freely — add-voice.sh only appends new entries, never modifies existing ones.
-
-CONF_EOF
-
-    # Append voice sections per locale (sorted)
-    for locale in $(printf '%s\n' "${!seen_locales[@]}" | LC_ALL=C sort); do
-        echo "# --- ${locale} voices (initial install) ---" >> "$SPD_MODULE_CONF"
-        generate_addvoice_lines "$locale" "$fallback_voice" >> "$SPD_MODULE_CONF"
-        echo "" >> "$SPD_MODULE_CONF"
-    done
-
-    ok "piper-generic.conf written to ${SPD_MODULE_CONF}"
-}
-
 # ── speechd.conf patching ─────────────────────────────────────────────────────
 patch_speechd_conf() {
     mkdir -p "$SPD_CONFIG_DIR"
@@ -511,33 +237,6 @@ ensure_path() {
     fi
 }
 
-# ── Smoke test ────────────────────────────────────────────────────────────────
-smoke_test() {
-    local voice="${1:-$PIPER_VOICE}"
-    local model="${VOICES_DIR}/${voice}.onnx"
-    if [[ ! -f "$model" ]]; then
-        warn "Smoke test skipped — model not found: ${model}"
-        return
-    fi
-    info "Smoke test: you should hear speech..."
-    if echo "Piper text to speech is working." | \
-        "$LOCAL_BIN/piper-spd" "$voice" "$voice" 2>/dev/null; then
-        ok "Smoke test passed."
-    else
-        warn "Smoke test failed — audio may not be configured. Installation is otherwise complete."
-    fi
-}
-
-# ── Reload speech-dispatcher ──────────────────────────────────────────────────
-reload_speechd() {
-    if pkill -HUP speech-dispatcher 2>/dev/null; then
-        ok "speech-dispatcher SIGHUP sent — config will be reloaded."
-    else
-        warn "speech-dispatcher not running — attempting to start it..."
-        speech-dispatcher -d 2>/dev/null || true
-    fi
-}
-
 # ── Main ───────────────────────────────────────────────────────────────────────
 main() {
     echo ""
@@ -553,19 +252,22 @@ main() {
     detect_piper
     cleanup_legacy_piper_symlink
     detect_audio_backend
-    fetch_voices_json
+
+    if ! piper_fetch_catalogue true; then
+        warn "Continuing without a fresh voice catalogue; existing voices will still be used."
+    fi
 
     local gender
-    gender="$(lookup_gender "$PIPER_VOICE")"
+    gender="$(piper_lookup_gender "$PIPER_VOICE")"
     info "Voice gender: ${gender}"
 
-    download_voice "$PIPER_VOICE"
+    piper_download_voice "$PIPER_VOICE" false
     write_wrapper
-    generate_spd_conf "$PIPER_VOICE"
+    piper_generate_conf "$PIPER_VOICE"
     patch_speechd_conf
     ensure_path
-    smoke_test "$PIPER_VOICE"
-    reload_speechd
+    piper_smoke_test "$PIPER_VOICE"
+    piper_reload_speechd
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
@@ -574,8 +276,10 @@ main() {
     echo "║                                                                  ║"
     echo "║  Test:  spd-say 'Hello from Piper'                              ║"
     echo "║                                                                  ║"
-    echo "║  Add more voices:                                                ║"
-    echo "║    ./add-voice.sh en_US-lessac-medium female                    ║"
+    echo "║  Manage voices:                                                  ║"
+    echo "║    ./voices.sh list                                              ║"
+    echo "║    ./voices.sh add en_US-lessac-medium female                    ║"
+    echo "║    ./voices.sh default en_US-lessac-medium                       ║"
     echo "║                                                                  ║"
     echo "║  Voice browser: https://rhasspy.github.io/piper-samples/        ║"
     echo "╠══════════════════════════════════════════════════════════════════╣"
