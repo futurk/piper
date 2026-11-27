@@ -28,6 +28,49 @@ ok()   { echo -e "\033[1;32m[OK]\033[0m    $*"; }
 warn() { echo -e "\033[1;33m[WARN]\033[0m  $*" >&2; }
 die()  { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
+piper_is_interactive() {
+    [[ "${PIPER_NO_INTERACTIVE:-}" == "1" ]] && return 1
+    [[ "${PIPER_INTERACTIVE:-}" == "1" ]] && return 0
+    [[ -t 0 && -t 1 ]]
+}
+
+# piper_prompt <prompt> [default]
+# Prints the answer to stdout; the prompt goes to stderr.
+piper_prompt() {
+    local prompt="$1"
+    local default="${2:-}"
+    local answer
+
+    if [[ -n "$default" ]]; then
+        read -r -p "${prompt} [${default}]: " answer || return 1
+        answer="${answer:-$default}"
+    else
+        read -r -p "${prompt}: " answer || return 1
+    fi
+    printf '%s' "$answer"
+}
+
+# piper_confirm <prompt> [default]
+# Returns 0 for yes, 1 for no. Default answers are y or n.
+piper_confirm() {
+    local prompt="$1"
+    local default="${2:-n}"
+    local display="$default"
+    local answer
+
+    case "$default" in
+        y) display="Y/n" ;;
+        n) display="y/N" ;;
+    esac
+
+    read -r -p "${prompt} [${display}]: " answer || return 1
+    answer="${answer:-$default}"
+    case "${answer,,}" in
+        y|yes) return 0 ;;
+        *)     return 1 ;;
+    esac
+}
+
 # ---------------------------------------------------------------------------
 # Prerequisites and catalogue
 # ---------------------------------------------------------------------------
@@ -107,6 +150,76 @@ print("|".join(str(value) for value in (
     json_file.get("size_bytes", ""),
     json_file.get("md5_digest", ""),
 )))
+PYEOF
+}
+
+# piper_catalogue_locales
+# Prints: locale<TAB>language-name<TAB>voice-count, sorted by language name.
+piper_catalogue_locales() {
+    [[ -f "$VOICES_JSON" ]] || return 1
+
+    python3 - "$VOICES_JSON" << 'PYEOF'
+import json
+import sys
+from collections import Counter
+
+with open(sys.argv[1]) as fh:
+    catalogue = json.load(fh)
+
+counts = Counter()
+names = {}
+for entry in catalogue.values():
+    language = entry.get("language") or {}
+    locale = language.get("code", "")
+    if not locale:
+        continue
+    counts[locale] += 1
+    name = language.get("name_english") or language.get("name") or locale
+    country = language.get("country_english")
+    if country:
+        name = f"{name}, {country}"
+    names[locale] = name
+
+for locale, count in sorted(counts.items(), key=lambda item: (names.get(item[0], item[0]).lower(), item[0])):
+    print(f"{locale}\t{names.get(locale, locale)}\t{count}")
+PYEOF
+}
+
+# piper_catalogue_voices <locale> [quality]
+# Prints: voice<TAB>quality<TAB>speakers<TAB>size-bytes, sorted.
+piper_catalogue_voices() {
+    local locale="$1"
+    local quality="${2:-all}"
+    [[ -f "$VOICES_JSON" ]] || return 1
+
+    python3 - "$locale" "$quality" "$VOICES_JSON" << 'PYEOF'
+import json
+import sys
+
+locale, quality, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as fh:
+    catalogue = json.load(fh)
+
+rows = []
+for voice, entry in catalogue.items():
+    language = (entry.get("language") or {}).get("code", "")
+    if language != locale:
+        continue
+    entry_quality = entry.get("quality", "")
+    if quality != "all" and entry_quality != quality:
+        continue
+
+    files = entry.get("files") or {}
+    onnx_path = next((name for name in files if name.endswith(".onnx")), None)
+    if not onnx_path:
+        continue
+
+    speakers = entry.get("num_speakers", 1)
+    size = files[onnx_path].get("size_bytes", 0)
+    rows.append((voice, entry_quality, speakers, size))
+
+for voice, entry_quality, speakers, size in sorted(rows, key=lambda row: (row[1], row[0])):
+    print(f"{voice}\t{entry_quality}\t{speakers}\t{size}")
 PYEOF
 }
 
@@ -270,9 +383,10 @@ piper_current_default_voice() {
 piper_voice_slots() {
     local voice="$1"
     [[ -f "$SPD_MODULE_CONF" ]] || return 0
-    grep -F "\"${voice}\"" "$SPD_MODULE_CONF" 2>/dev/null \
-        | sed -n 's/^AddVoice "[^"]*" "\([^"]*\)".*/\1/p' \
-        | paste -sd, -
+    {
+        grep -F "\"${voice}\"" "$SPD_MODULE_CONF" 2>/dev/null || true
+    } | sed -n 's/^AddVoice "[^"]*" "\([^"]*\)".*/\1/p' \
+      | paste -sd, -
 }
 
 # piper_generate_addvoice_lines <locale> <fallback_voice>

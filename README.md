@@ -39,7 +39,8 @@ wrapper and conf are regenerated from scratch.
 PIPER_VOICE=en_US-ryan-high ./setup-piper.sh
 ```
 
-`voices.sh` honors the same `PIPER_DATA_DIR` and `PIPER_VOICES_REV` overrides.
+`voices.sh` honors the same `PIPER_DATA_DIR` and `PIPER_VOICES_REV` overrides,
+plus `PIPER_INTERACTIVE=1` / `PIPER_NO_INTERACTIVE=1` for menu behavior.
 
 ---
 
@@ -50,15 +51,17 @@ Manages installed voices and their speech-dispatcher mappings.
 ```bash
 ./voices.sh list
 ./voices.sh check
-./voices.sh add <voice> <gender> [--force] [--default]
-./voices.sh remove <voice>
-./voices.sh default <voice>
-./voices.sh gender <voice> <gender>
+./voices.sh available [locale] [quality]
+./voices.sh add [<voice> <gender>] [--force] [--default] [-i]
+./voices.sh remove [<voice>]
+./voices.sh default [<voice>]
+./voices.sh gender [<voice> [<gender>]]
 ./voices.sh update [<voice>|--all] [--check]
 ```
 
 - `list` — show installed voices, metadata, size, default marker, and slot mappings
 - `check` — validate files, JSON, MD5s, gender sidecars, and conf mappings
+- `available` — list catalogue locales, or voices for a locale/quality
 - `add` — download and map a voice; `--force` refreshes it, `--default` makes it the fallback
 - `remove` — delete a voice and regenerate the module config; refuses to remove
   the current default or the only installed voice
@@ -68,9 +71,22 @@ Manages installed voices and their speech-dispatcher mappings.
   `--check` reports without downloading (exits nonzero if updates are
   available), `--all` refreshes every voice
 
+On a TTY, `add`, `remove`, `default`, and `gender` launch an interactive
+picker when arguments are omitted:
+
+- `add` — filter by language/locale, choose quality, select a voice, confirm
+  gender and default, then download
+- `remove` — select an installed voice and confirm deletion
+- `default` — select an installed voice
+- `gender` — select an installed voice, then choose its gender
+
+Set `PIPER_NO_INTERACTIVE=1` to force the old argument-required behavior.
+Set `PIPER_INTERACTIVE=1` to use menus even when stdin is not a TTY.
+
 Gender determines which speech-dispatcher slot type (`MALE*` / `FEMALE*`)
-the voice is mapped to. It must be provided explicitly because the Piper
-voice catalogue does not include a gender field.
+the voice is mapped to. It must be provided explicitly (or confirmed in the
+interactive picker) because the Piper voice catalogue does not include a
+gender field.
 
 speech-dispatcher provides three slots per gender (`MALE1`–`MALE3`,
 `FEMALE1`–`FEMALE3`). The generated config distributes installed voices
@@ -80,9 +96,12 @@ regenerates the config from the installed voices.
 **Examples**
 
 ```bash
+./voices.sh available
+./voices.sh available en_US
+./voices.sh add                          # interactive picker
 ./voices.sh add en_GB-cori-high female
-./voices.sh add en_US-ryan-high male
 ./voices.sh add --default en_US-lessac-high female
+./voices.sh remove                       # interactive picker
 ./voices.sh default en_GB-cori-high
 ./voices.sh gender en_GB-alan-medium male
 ./voices.sh update --check
