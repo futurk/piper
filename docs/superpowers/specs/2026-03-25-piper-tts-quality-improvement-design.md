@@ -1,5 +1,7 @@
 # Piper TTS Quality Improvement — Design Spec
 
+> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`.
+
 **Date:** 2026-03-25
 **Status:** Approved
 

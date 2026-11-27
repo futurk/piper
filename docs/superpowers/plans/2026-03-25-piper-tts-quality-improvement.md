@@ -1,5 +1,7 @@
 # Piper TTS Quality Improvement — Implementation Plan
 
+> **Historical note:** `install-piper.sh` was later renamed to `setup-piper.sh`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix audio artifacts in speech-dispatcher's piper-generic module, add high-quality voices, and wire up speech-dispatcher's rate parameter to piper's `--length_scale`.
